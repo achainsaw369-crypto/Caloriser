@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { Food } from '../core/types';
-import { BUILTIN_FOODS } from '../core/builtinFoods';
+import { BUILTIN_FOODS, BUILTIN_GROUPS } from '../core/builtinFoods';
 import { isBarcode, lookupBarcode, searchOpenFoodFacts } from '../core/foodApi';
 import { recentFoods, recipeToFood } from '../core/nutrition';
 import { searchLocal } from '../core/search';
@@ -73,52 +73,75 @@ export function FoodPicker({ title, onPick, onClose, excludeId }: Props) {
       <p className="empty">{empty}</p>
     );
 
-  return (
-    <Sheet title={title} onClose={onClose}>
+  const toolbar = (
+    <>
       <div className="search-bar">
         <input
           type="search"
+          enterKeyHint="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          // На «Найти» прячем клавиатуру, чтобы открыть весь список
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
           placeholder="Поиск продукта или штрихкод"
           autoFocus
         />
       </div>
-      <button className="btn btn-ghost full" onClick={() => setCreating(true)}>
-        + Создать свой продукт
-      </button>
+      {!term && (
+        <div className="segmented full tabs">
+          <button className={tab === 'recent' ? 'active' : ''} onClick={() => setTab('recent')}>
+            Недавние
+          </button>
+          <button className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')}>
+            Мои
+          </button>
+          <button className={tab === 'base' ? 'active' : ''} onClick={() => setTab('base')}>
+            Справочник
+          </button>
+        </div>
+      )}
+    </>
+  );
 
+  return (
+    <Sheet title={title} onClose={onClose} toolbar={toolbar} full>
       {term ? (
         <>
           {local.length > 0 && (
             <>
-              <p className="section-label">Мои и справочник</p>
+              <p className="section-label">Справочник и мои</p>
               {list(local, '')}
             </>
           )}
           <p className="section-label">
-            Open Food Facts {status === 'loading' && <span className="spinner" aria-label="Загрузка" />}
+            Магазинные продукты (Open Food Facts){' '}
+            {status === 'loading' && <span className="spinner" aria-label="Загрузка" />}
           </p>
           {status === 'error' && <p className="empty">Не удалось загрузить данные. Проверьте подключение к интернету.</p>}
           {status === 'done' && list(remote, 'Ничего не найдено. Попробуйте другой запрос или создайте свой продукт.')}
           {status === 'idle' && <p className="empty">Введите хотя бы 2 символа</p>}
+          <button className="btn btn-ghost full" onClick={() => setCreating(true)}>
+            + Создать свой продукт
+          </button>
         </>
       ) : (
         <>
-          <div className="segmented full tabs">
-            <button className={tab === 'recent' ? 'active' : ''} onClick={() => setTab('recent')}>
-              Недавние
-            </button>
-            <button className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')}>
-              Мои
-            </button>
-            <button className={tab === 'base' ? 'active' : ''} onClick={() => setTab('base')}>
-              Справочник
-            </button>
-          </div>
           {tab === 'recent' && list(recent, 'Здесь появятся продукты, которые вы недавно добавляли.')}
-          {tab === 'mine' && list(mine, 'Своих блюд и продуктов пока нет. Создайте их во вкладке «Мои блюда».')}
-          {tab === 'base' && list(BUILTIN_FOODS, '')}
+          {tab === 'mine' && (
+            <>
+              <button className="btn btn-ghost full" onClick={() => setCreating(true)}>
+                + Создать свой продукт
+              </button>
+              {list(mine, 'Своих блюд и продуктов пока нет. Блюда создаются во вкладке «Мои блюда».')}
+            </>
+          )}
+          {tab === 'base' &&
+            BUILTIN_GROUPS.map((g) => (
+              <Fragment key={g.title}>
+                <p className="section-label">{g.title}</p>
+                {list(g.foods, '')}
+              </Fragment>
+            ))}
         </>
       )}
 

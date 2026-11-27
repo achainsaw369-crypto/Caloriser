@@ -55,6 +55,19 @@ export function mapOffProduct(p: OffProduct): Food | null {
   }
   const name = decodeEntities(p.product_name_ru || p.product_name || '');
   if (!name || kcal === undefined || !p.code) return null;
+
+  // Проверка качества: данные в базе вносят пользователи, бывают ошибки
+  const protein = num(n['proteins_100g']) ?? 0;
+  const fat = num(n['fat_100g']) ?? 0;
+  const carbs = num(n['carbohydrates_100g']) ?? 0;
+  const est = protein * 4 + fat * 9 + carbs * 4 + (num(n['alcohol_100g']) ?? 0) * 7;
+  if (est === 0 && kcal > 5) return null; // БЖУ не заполнены
+  if (est > 0 && Math.abs(kcal - est) > Math.max(40, est * 0.4)) {
+    // Частая ошибка — калории указаны в кДж
+    const fromKj = kcal / 4.184;
+    if (Math.abs(fromKj - est) <= Math.max(25, est * 0.25)) kcal = fromKj;
+    else return null;
+  }
   // Новый поисковый API отдаёт бренды как теги вида «русское-молоко»
   const brand = Array.isArray(p.brands)
     ? p.brands.map((b) => b.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase())).join(', ')
@@ -65,12 +78,7 @@ export function mapOffProduct(p: OffProduct): Food | null {
     brand: brand ? decodeEntities(brand) : undefined,
     source: 'openfoodfacts',
     barcode: p.code,
-    per100g: {
-      kcal,
-      protein: num(n['proteins_100g']) ?? 0,
-      fat: num(n['fat_100g']) ?? 0,
-      carbs: num(n['carbohydrates_100g']) ?? 0,
-    },
+    per100g: { kcal, protein, fat, carbs },
     servingGrams: parseServing(p),
   };
 }
@@ -88,15 +96,36 @@ function mapList(list: OffProduct[]): Food[] {
   return out;
 }
 
+async function searchHits(q: string, pageSize: number, signal?: AbortSignal): Promise<OffProduct[]> {
+  const params = new URLSearchParams({ q, page_size: String(pageSize), fields: FIELDS });
+  const res = await fetch(`${SEARCH_URL}?${params}`, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as { hits?: OffProduct[] };
+  return json.hits ?? [];
+}
+
+/**
+ * Поиск: сначала товары, продающиеся в России, затем остальные.
+ * Два запроса идут параллельно; если один упал — используем второй.
+ */
 export async function searchOpenFoodFacts(query: string, signal?: AbortSignal, pageSize = 30): Promise<Food[]> {
-  const params = new URLSearchParams({ q: query, page_size: String(pageSize), fields: FIELDS });
-  try {
-    const res = await fetch(`${SEARCH_URL}?${params}`, { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = (await res.json()) as { hits?: OffProduct[] };
-    return mapList(json.hits ?? []);
-  } catch (e) {
-    if (signal?.aborted) throw e;
+  // Убираем символы, которые поисковый движок воспринимает как синтаксис запроса
+  const clean = query.replace(/[:"()[\]{}^~*?\\/!+\-&|<>=]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  // «*» в конце — поиск по началу последнего слова, чтобы находилось и недописанное («курин» → «куриное»)
+  const q = /\d$/.test(clean) ? clean : `${clean}*`;
+  const [ru, all] = await Promise.allSettled([
+    searchHits(`${q} countries:"en:russia"`, pageSize, signal),
+    searchHits(q, 20, signal),
+  ]);
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  if (ru.status === 'fulfilled' || all.status === 'fulfilled') {
+    return mapList([
+      ...(ru.status === 'fulfilled' ? ru.value : []),
+      ...(all.status === 'fulfilled' ? all.value : []),
+    ]);
+  }
+  {
     // Запасной вариант — классический API поиска
     const legacy = new URLSearchParams({
       search_terms: query,

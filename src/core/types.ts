@@ -29,6 +29,8 @@ export interface Food {
   /** Вес одной порции/упаковки, если известен */
   servingGrams?: number;
   barcode?: string;
+  /** Раздел справочника */
+  category?: string;
 }
 
 export interface RecipeIngredient {

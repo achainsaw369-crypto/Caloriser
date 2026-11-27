@@ -428,7 +428,10 @@ h3 {
 /* Sheet (modal) */
 .overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%; /* уточняется скриптом по visualViewport (клавиатура) */
   background: rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: flex-end;
@@ -440,11 +443,24 @@ h3 {
   background: var(--surface);
   width: 100%;
   max-width: 560px;
-  max-height: 92vh;
+  max-height: calc(100% - 24px);
   border-radius: 18px 18px 0 0;
   display: flex;
   flex-direction: column;
   animation: slide 0.2s ease-out;
+}
+/* Поиск на телефоне — на весь видимый экран, строка поиска всегда сверху */
+.sheet-full {
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+}
+.sheet-toolbar {
+  padding: 0 18px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
 }
 @media (min-width: 640px) {
   .overlay {
@@ -452,7 +468,10 @@ h3 {
   }
   .sheet {
     border-radius: 18px;
-    max-height: 86vh;
+    max-height: 86%;
+  }
+  .sheet-full {
+    height: 86%;
   }
 }
 .sheet-head {
